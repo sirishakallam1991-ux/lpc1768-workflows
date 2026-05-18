@@ -1,0 +1,83 @@
+name: Reusable LPC1768 Build and Email
+on:
+  workflow_call:
+    inputs:
+      project_name:
+        description: 'Project name'
+        required: true
+        type: string
+      email_to:
+        description: 'Receiver email address'
+        required: true
+        type: string
+    secrets:
+      GMAIL_USERNAME:
+        required: true
+      GMAIL_APP_PASSWORD:
+        required: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Check source files exist
+        run: |
+          echo "Checking source files..."
+          ls -la *.c || true
+          ls -la *.h || true
+          echo "File check done!"
+      - name: Install ARM cross compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-arm-none-eabi
+      - name: Validate C syntax
+        id: syntax_check
+        run: |
+          RESULT=""
+          STATUS="SUCCESS"
+          for file in *.c; do
+            echo "Checking $file ..."
+            if arm-none-eabi-gcc -mcpu=cortex-m3 -mthumb \
+              -fsyntax-only -I. "$file" 2>&1; then
+              RESULT="$RESULT $file=OK"
+            else
+              RESULT="$RESULT $file=FAILED"
+              STATUS="FAILED"
+            fi
+          done
+          echo "result=$RESULT" >> $GITHUB_OUTPUT
+          echo "status=$STATUS" >> $GITHUB_OUTPUT
+      - name: Build summary
+        run: |
+          echo "================================"
+          echo "  Project : ${{ inputs.project_name }}"
+          echo "  Status  : ${{ steps.syntax_check.outputs.status }}"
+          echo "  Receiver: ${{ inputs.email_to }}"
+          echo "================================"
+      - name: Send email report
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          username: ${{ secrets.GMAIL_USERNAME }}
+          password: ${{ secrets.GMAIL_APP_PASSWORD }}
+          subject: "[${{ steps.syntax_check.outputs.status }}] ${{ inputs.project_name }} Build Report"
+          to: ${{ inputs.email_to }}
+          from: "GitHub Actions <${{ secrets.GMAIL_USERNAME }}>"
+          body: |
+            ==========================================
+            Build Report — ${{ inputs.project_name }}
+            ==========================================
+            Status  : ${{ steps.syntax_check.outputs.status }}
+            Repo    : ${{ github.repository }}
+            Branch  : ${{ github.ref_name }}
+            Commit  : ${{ github.sha }}
+            File Results:
+            ${{ steps.syntax_check.outputs.result }}
+            View full logs:
+            https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            Sent by: ${{ secrets.GMAIL_USERNAME }}
+            Sent to: ${{ inputs.email_to }}
+            --
+            GitHub Actions Automated Report
