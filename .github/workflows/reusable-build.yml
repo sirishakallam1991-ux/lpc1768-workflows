@@ -6,34 +6,31 @@ on:
         description: 'Project name'
         required: true
         type: string
-      email_to:
-        description: 'Receiver email address'
-        required: true
-        type: string
     secrets:
       GMAIL_USERNAME:
         required: true
       GMAIL_APP_PASSWORD:
         required: true
+      NOTIFY_EMAIL:
+        required: true
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
       - name: Check source files exist
         run: |
           echo "Checking source files..."
           ls -la *.c || true
           ls -la *.h || true
           echo "File check done!"
-
       - name: Install ARM cross compiler
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc-arm-none-eabi
-
       - name: Create LPC17xx stub header
         run: |
           cat > lpc17xx.h << 'HEADER'
@@ -48,15 +45,63 @@ jobs:
             volatile uint32_t FIOSET;
             volatile uint32_t FIOCLR;
           } LPC_GPIO_TypeDef;
-          #define LPC_GPIO0 ((LPC_GPIO_TypeDef*)0x2009C000)
-          #define LPC_GPIO1 ((LPC_GPIO_TypeDef*)0x2009C020)
-          #define LPC_GPIO2 ((LPC_GPIO_TypeDef*)0x2009C040)
-          #define LPC_GPIO3 ((LPC_GPIO_TypeDef*)0x2009C060)
-          #define LPC_GPIO4 ((LPC_GPIO_TypeDef*)0x2009C080)
+          typedef struct {
+            volatile uint32_t PINSEL0;
+            volatile uint32_t PINSEL1;
+            volatile uint32_t PINSEL2;
+            volatile uint32_t PINSEL3;
+            volatile uint32_t PINSEL4;
+          } LPC_PINCON_TypeDef;
+          typedef struct {
+            volatile uint32_t IR;
+            volatile uint32_t TCR;
+            volatile uint32_t TC;
+            volatile uint32_t PR;
+            volatile uint32_t PC;
+            volatile uint32_t MR0;
+            volatile uint32_t MR1;
+            volatile uint32_t MR2;
+            volatile uint32_t MR3;
+            volatile uint32_t MCR;
+          } LPC_TIM_TypeDef;
+          typedef struct {
+            volatile uint32_t PLLCON;
+            volatile uint32_t PLLCFG;
+            volatile uint32_t PLLSTAT;
+            volatile uint32_t PLLFEED;
+          } LPC_PLL_TypeDef;
+          typedef struct {
+            volatile uint32_t FLASHCFG;
+            uint32_t RESERVED[31];
+            volatile uint32_t PLL0CON;
+            volatile uint32_t PLL0CFG;
+            volatile uint32_t PLL0STAT;
+            volatile uint32_t PLL0FEED;
+            uint32_t RESERVED1[4];
+            volatile uint32_t PLL1CON;
+            volatile uint32_t PLL1CFG;
+            volatile uint32_t PLL1STAT;
+            volatile uint32_t PLL1FEED;
+            uint32_t RESERVED2[4];
+            volatile uint32_t PCON;
+            volatile uint32_t PCONP;
+            uint32_t RESERVED3[15];
+            volatile uint32_t CCLKCFG;
+            volatile uint32_t USBCLKCFG;
+            volatile uint32_t CLKSRCSEL;
+          } LPC_SC_TypeDef;
+          #define LPC_GPIO0    ((LPC_GPIO_TypeDef*)0x2009C000)
+          #define LPC_GPIO1    ((LPC_GPIO_TypeDef*)0x2009C020)
+          #define LPC_GPIO2    ((LPC_GPIO_TypeDef*)0x2009C040)
+          #define LPC_GPIO3    ((LPC_GPIO_TypeDef*)0x2009C060)
+          #define LPC_GPIO4    ((LPC_GPIO_TypeDef*)0x2009C080)
+          #define LPC_PINCON   ((LPC_PINCON_TypeDef*)0x4002C000)
+          #define LPC_TIM0     ((LPC_TIM_TypeDef*)0x40004000)
+          #define LPC_TIM1     ((LPC_TIM_TypeDef*)0x40008000)
+          #define LPC_SC       ((LPC_SC_TypeDef*)0x400FC000)
           #endif
           HEADER
-          echo "Header created successfully"
-
+          echo "Header created!"
       - name: Validate C syntax
         id: syntax_check
         run: |
@@ -74,14 +119,12 @@ jobs:
           done
           echo "result=$RESULT" >> $GITHUB_OUTPUT
           echo "status=$STATUS" >> $GITHUB_OUTPUT
-
       - name: Build summary
         run: |
           echo "================================"
           echo "  Project : ${{ inputs.project_name }}"
           echo "  Status  : ${{ steps.syntax_check.outputs.status }}"
           echo "================================"
-
       - name: Send email report
         uses: dawidd6/action-send-mail@v3
         with:
@@ -90,7 +133,7 @@ jobs:
           username: ${{ secrets.GMAIL_USERNAME }}
           password: ${{ secrets.GMAIL_APP_PASSWORD }}
           subject: "[${{ steps.syntax_check.outputs.status }}] ${{ inputs.project_name }} Build Report"
-          to: ${{ inputs.email_to }}
+          to: ${{ secrets.NOTIFY_EMAIL }}
           from: "GitHub Actions <${{ secrets.GMAIL_USERNAME }}>"
           body: |
             ==========================================
@@ -104,7 +147,5 @@ jobs:
             ${{ steps.syntax_check.outputs.result }}
             View full logs:
             https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
-            Sent by: ${{ secrets.GMAIL_USERNAME }}
-            Sent to: ${{ inputs.email_to }}
             --
             GitHub Actions Automated Report
