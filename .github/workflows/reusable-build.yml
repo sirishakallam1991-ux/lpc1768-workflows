@@ -21,16 +21,42 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
       - name: Check source files exist
         run: |
           echo "Checking source files..."
           ls -la *.c || true
           ls -la *.h || true
           echo "File check done!"
+
       - name: Install ARM cross compiler
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc-arm-none-eabi
+
+      - name: Create LPC17xx stub header
+        run: |
+          cat > lpc17xx.h << 'HEADER'
+          #ifndef LPC17XX_H
+          #define LPC17XX_H
+          #include <stdint.h>
+          typedef struct {
+            volatile uint32_t FIODIR;
+            uint32_t RESERVED[3];
+            volatile uint32_t FIOMASK;
+            volatile uint32_t FIOPIN;
+            volatile uint32_t FIOSET;
+            volatile uint32_t FIOCLR;
+          } LPC_GPIO_TypeDef;
+          #define LPC_GPIO0 ((LPC_GPIO_TypeDef*)0x2009C000)
+          #define LPC_GPIO1 ((LPC_GPIO_TypeDef*)0x2009C020)
+          #define LPC_GPIO2 ((LPC_GPIO_TypeDef*)0x2009C040)
+          #define LPC_GPIO3 ((LPC_GPIO_TypeDef*)0x2009C060)
+          #define LPC_GPIO4 ((LPC_GPIO_TypeDef*)0x2009C080)
+          #endif
+          HEADER
+          echo "Header created successfully"
+
       - name: Validate C syntax
         id: syntax_check
         run: |
@@ -48,13 +74,14 @@ jobs:
           done
           echo "result=$RESULT" >> $GITHUB_OUTPUT
           echo "status=$STATUS" >> $GITHUB_OUTPUT
+
       - name: Build summary
         run: |
           echo "================================"
           echo "  Project : ${{ inputs.project_name }}"
           echo "  Status  : ${{ steps.syntax_check.outputs.status }}"
-          echo "  Receiver: ${{ inputs.email_to }}"
           echo "================================"
+
       - name: Send email report
         uses: dawidd6/action-send-mail@v3
         with:
